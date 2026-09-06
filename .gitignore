@@ -1,0 +1,60 @@
+# Environment — NEVER commit credentials
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Node (for Hardhat contract compilation)
+node_modules/
+contracts/node_modules/
+contracts/cache/
+contracts/artifacts/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs
+*.log
+tmp/
+temp/
+/tmp/
+/temp/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Temp files
+*.tmp
+*.temp
+*.bak
+
+# Inswightface downloaded models (large, regenerated)
+.insightface/

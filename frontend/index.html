@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FaceID Chain Verify</title>
+
+  <!-- Tailwind CSS via CDN (no build step) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Design tokens ─────────────────────────────────────────── */
+    :root {
+      --bg-base:      #0b0d11;
+      --bg-card:     #13161d;
+      --bg-card-alt: #1a1e27;
+      --bg-input:    #1e2330;
+      --border:       #252a38;
+      --border-focus: #3d4663;
+
+      --text-primary:   #e8eaf0;
+      --text-secondary: #8b92a8;
+      --text-muted:    #525970;
+
+      --accent:        #6366f1;
+      --accent-dim:    #4f52c4;
+      --accent-glow:  rgba(99, 102, 241, 0.25);
+
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --yellow:  #eab308;
+      --blue:    #38bdf8;
+
+      --radius-sm: 6px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99,102,241,0.12) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(59,130,246,0.06) 0%, transparent 60%);
+      background-attachment: fixed;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Typography ─────────────────────────────────────────────── */
+    h1 { font-size: 2.25rem; font-weight: 700; letter-spacing: -0.04em; }
+    h2 { font-size: 1.5rem;  font-weight: 600; letter-spacing: -0.02em; }
+    h3 { font-size: 1.125rem; font-weight: 600; }
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; }
+
+    /* ── Layout helpers ────────────────────────────────────────── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+    }
+
+    /* ── Navigation tabs ───────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      gap: 0.25rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 4px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: transparent;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--text-primary); background: var(--bg-card-alt); }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    /* ── Upload zone ──────────────────────────────────────────── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-lg);
+      padding: 4rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s;
+      background: var(--bg-card);
+      position: relative;
+    }
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(99,102,241,0.06);
+      box-shadow: 0 0 0 4px var(--accent-glow);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+    }
+    .upload-icon {
+      width: 64px; height: 64px;
+      margin: 0 auto 1.25rem;
+      background: linear-gradient(135deg, var(--accent) 0%, #818cf8 100%);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 30px var(--accent-glow);
+    }
+    .upload-zone p { color: var(--text-secondary); font-size: 0.9375rem; line-height: 1.6; }
+    .upload-zone .hint { font-size: 0.8125rem; color: var(--text-muted); margin-top: 0.5rem; }
+
+    /* ── Stage tracker ───────────────────────────────────────── */
+    .stage-tracker {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.75rem;
+      padding: 1.25rem;
+    }
+    @media (max-width: 640px) {
+      .stage-tracker { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .stage-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 0.5rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      background: var(--bg-card-alt);
+      transition: all 0.4s;
+      opacity: 0.35;
+    }
+    .stage-step.active {
+      opacity: 1;
+      border-color: var(--accent);
+      background: rgba(99,102,241,0.08);
+      box-shadow: 0 0 16px rgba(99,102,241,0.2);
+    }
+    .stage-step.done {
+      opacity: 1;
+      border-color: var(--green);
+      background: rgba(34,197,94,0.07);
+    }
+    .stage-icon {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.125rem;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      transition: all 0.4s;
+    }
+    .stage-step.active .stage-icon {
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 0 12px var(--accent-glow);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .stage-step.done .stage-icon {
+      background: var(--green);
+      border-color: var(--green);
+    }
+    .stage-label {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-align: center;
+      line-height: 1.3;
+    }
+    .stage-step.done .stage-label { color: var(--green); }
+    .stage-step.active .stage-label { color: var(--text-primary); }
+
+    /* Spinner */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 8px var(--accent-glow); }
+      50%       { box-shadow: 0 0 20px rgba(99,102,241,0.5); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in { animation: fadeIn 0.35s ease-out forwards; }
+
+    /* ── Progress bar ─────────────────────────────────────────── */
+    .progress-bar-track {
+      height: 4px;
+      background: var(--bg-card-alt);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 0.75rem;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent) 0%, #818cf8 100%);
+      border-radius: 2px;
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+
+    /* ── Results layout ───────────────────────────────────────── */
+    .results-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 1rem;
+    }
+    @media (max-width: 768px) {
+      .results-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Face panel ──────────────────────────────────────────── */
+    .face-panel .face-crop-wrap {
+      position: relative;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--bg-input);
+      aspect-ratio: 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .face-panel .face-crop-wrap img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    .confidence-badge {
+      position: absolute;
+      bottom: 0.75rem; right: 0.75rem;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--green);
+    }
+
+    /* ── Match panel ──────────────────────────────────────────── */
+    .match-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--bg-card-alt);
+    }
+    .match-thumb {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      background: var(--bg-input);
+      display: block;
+    }
+    .match-thumb-placeholder {
+      width: 100%; height: 180px;
+      background: var(--bg-input);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+    .platform-badge {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid var(--border);
+    }
+
+    /* ── Blockchain proof card ────────────────────────────────── */
+    .proof-card {
+      background: linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(59,130,246,0.05) 100%);
+      border: 1px solid rgba(99,102,241,0.3);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+    }
+    .proof-row {
+      display: flex; align-items: flex-start; gap: 0.75rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .proof-row:last-child { border-bottom: none; }
+    .proof-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.25rem; }
+
+    /* ── Buttons ──────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .btn-primary:hover { background: var(--accent-dim); box-shadow: 0 0 28px rgba(99,102,241,0.4); }
+    .btn-outline {
+      background: transparent;
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { border-color: var(--border-focus); background: var(--bg-card-alt); }
+    .btn-green { background: var(--green); color: #fff; }
+    .btn-green:hover { filter: brightness(1.1); }
+
+    /* ── Verify tab ───────────────────────────────────────────── */
+    .verify-check {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 1rem 1.25rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      background: var(--bg-card-alt);
+      transition: all 0.3s;
+    }
+    .verify-check.pass {
+      border-color: var(--green);
+      background: rgba(34,197,94,0.07);
+    }
+    .verify-check.fail {
+      border-color: var(--red);
+      background: rgba(239,68,68,0.07);
+    }
+    .verify-icon {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; flex-shrink: 0;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+    }
+    .verify-check.pass .verify-icon { background: var(--green); border-color: var(--green); }
+    .verify-check.fail .verify-icon { background: var(--red);   border-color: var(--red); }
+    .verify-check-label { font-size: 0.875rem; font-weight: 500; }
+    .verify-check-detail { font-size: 0.8125rem; color: var(--text-secondary); margin-top: 0.15rem; }
+
+    /* ── Error / empty states ───────────────────────────────── */
+    .state-message {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-secondary);
+    }
+    .state-message .emoji { font-size: 2.5rem; margin-bottom: 0.75rem; }
+
+    /* ── Utility ─────────────────────────────────────────────── */
+    .hidden { display: none !important; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .badge-green { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .badge-red   { background: rgba(239,68,68,0.15);  color: var(--red);   border: 1px solid rgba(239,68,68,0.3); }
+    .badge-blue  { background: rgba(56,189,248,0.12); color: var(--blue);  border: 1px solid rgba(56,189,248,0.3); }
+
+    /* ── Match type chip ─────────────────────────────────────── */
+    .match-type-chip {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .match-type-chip.full     { background: rgba(34,197,94,0.15);  color: var(--green); }
+    .match-type-chip.partial  { background: rgba(234,179,8,0.15); color: var(--yellow); }
+    .match-type-chip.similar   { background: rgba(56,189,248,0.12); color: var(--blue); }
+
+    /* ── Copy button ─────────────────────────────────────────── */
+    .copy-btn {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { border-color: var(--border-focus); color: var(--text-primary); }
+    .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+    /* ── Match selector ─────────────────────────────────────── */
+    .match-list { max-height: 260px; overflow-y: auto; }
+    .match-list-item {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .match-list-item:hover { background: var(--bg-card-alt); }
+    .match-list-item:last-child { border-bottom: none; }
+    .match-list-item.selected { background: rgba(99,102,241,0.1); }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<header class="border-b border-[var(--border)] bg-[var(--bg-base)]/80 backdrop-blur-md sticky top-0 z-50">
+  <div class="container py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#6366f1] to-[#818cf8] flex items-center justify-center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/>
+          <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+        </svg>
+      </div>
+      <span class="font-semibold text-[var(--text-primary)] tracking-tight">FaceID Chain Verify</span>
+    </div>
+    <a href="http://localhost:8000/docs" target="_blank"
+       class="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
+      API docs
+    </a>
+  </div>
+</header>
+
+<!-- ── Main ──────────────────────────────────────────────── -->
+<main class="container py-10">
+
+  <!-- Tab switcher -->
+  <div class="tab-bar max-w-md mx-auto mb-8">
+    <button class="tab-btn active" id="tab-submit" onclick="switchTab('submit')">
+      Submit Image
+    </button>
+    <button class="tab-btn" id="tab-verify" onclick="switchTab('verify')">
+      Verify Record
+    </button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- SUBMIT TAB                                             -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section id="section-submit">
+
+    <!-- ── Upload zone ─────────────────────────────────────── -->
+    <div id="upload-section">
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input"
+               accept="image/jpeg,image/png,image/webp"
+               onchange="handleFileSelect(this.files[0])" />
+        <div class="upload-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 16 12 12 8 16"/>
+            <line x1="12" y1="12" x2="12" y2="21"/>
+            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+          </svg>
+        </div>
+        <p><strong>Drop your image here</strong> or click to browse</p>
+        <p class="hint">JPEG, PNG, WebP &bull; Max 10 MB</p>
+      </div>
+    </div>
+
+    <!-- ── Progress section ───────────────────────────────── -->
+    <div id="progress-section" class="hidden fade-in">
+      <div class="card p-6 mb-4">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold">Processing your image…</h2>
+          <span id="job-id-label" class="mono text-[var(--text-muted)] text-xs"></span>
+        </div>
+
+        <!-- Stage tracker -->
+        <div class="stage-tracker" id="stage-tracker">
+          <div class="stage-step" id="st-face" data-stage="face_encode">
+            <div class="stage-icon" id="st-icon-face">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+              </svg>
+            </div>
+            <span class="stage-label">Detect Face</span>
+          </div>
+
+          <div class="stage-step" id="st-search">
+            <div class="stage-icon" id="st-icon-search">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+            </div>
+            <span class="stage-label">Search Web</span>
+          </div>
+
+          <div class="stage-step" id="st-rank">
+            <div class="stage-icon" id="st-icon-rank">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+            </div>
+            <span class="stage-label">Rank Matches</span>
+          </div>
+
+          <div class="stage-step" id="st-ipfs">
+            <div class="stage-icon" id="st-icon-ipfs">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                <polyline points="2 17 12 22 22 17"/>
+                <polyline points="2 12 12 17 22 12"/>
+              </svg>
+            </div>
+            <span class="stage-label">Pin to IPFS</span>
+          </div>
+
+          <div class="stage-step" id="st-chain">
+            <div class="stage-icon" id="st-icon-chain">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+              </svg>
+            </div>
+            <span class="stage-label">Write Chain</span>
+          </div>
+
+          <div class="stage-step" id="st-done">
+            <div class="stage-icon" id="st-icon-done">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <span class="stage-label">Complete</span>
+          </div>
+        </div>
+
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-bar"></div>
+        </div>
+        <p class="text-xs text-[var(--text-muted)] mt-2" id="stage-status">Waiting…</p>
+      </div>
+    </div><!-- /progress-section -->
+
+    <!-- Face crop preview (shown as soon as face detection finishes) -->
+    <div id="face-preview-card" class="hidden card p-4 mb-4 fade-in">
+      <h3 class="text-sm font-semibold mb-3 text-[var(--text-secondary)]">Face Detected</h3>
+      <div class="flex gap-4 items-center">
+        <div class="w-28 h-28 rounded-xl overflow-hidden bg-[var(--bg-input)] flex-shrink-0">
+          <img id="face-crop-img" src="" alt="Cropped face" class="w-full h-full object-cover" />
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="badge badge-green text-xs">Face found</span>
+            <span class="text-xs text-[var(--text-muted)]" id="conf-label"></span>
+          </div>
+          <p class="text-xs text-[var(--text-secondary)] mono" id="emb-hash-preview"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error state (shown if pipeline errors out) -->
+    <div id="error-card" class="hidden card border-[var(--red)] p-6 mb-4 fade-in">
+      <div class="flex gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full bg-[rgba(239,68,68,0.15)] flex items-center justify-center flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <div class="flex-1">
+          <h3 class="text-sm font-semibold text-[var(--red)] mb-1" id="error-title">Pipeline Error</h3>
+          <p class="text-sm text-[var(--text-secondary)]" id="error-detail"></p>
+        </div>
+      </div>
+
+      <!-- IPFS partial-success info shown when chain write failed but IPFS succeeded -->
+      <div id="error-ipfs-info" class="hidden p-3 rounded-lg bg-[rgba(56,189,248,0.07)] border border-[rgba(56,189,248,0.25)] mb-4">
+        <p class="text-xs font-semibold text-[var(--blue)] mb-2">Partial success — data pinned to IPFS</p>
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-xs text-[var(--text-muted)]">IPFS CID:</span>
+          <code class="mono text-xs text-[var(--text-secondary)]" id="error-ipfs-cid"></code>
+          <a id="error-ipfs-link" href="#" target="_blank"
+             class="badge badge-blue text-xs hover:opacity-80 transition-opacity">Gateway ↗</a>
+        </div>
+      </div>
+
+      <button class="btn btn-outline mt-1 text-xs" onclick="resetToUpload()">
+        Try another image
+      </button>
+    </div>
+
+    <!-- ── Results section ─────────────────────────────────── -->
+    <div id="results-section" class="hidden fade-in">
+
+      <!-- Success banner -->
+      <div class="flex items-center gap-3 mb-6 p-4 rounded-xl bg-[rgba(34,197,94,0.08)] border border-[rgba(34,197,94,0.3)]">
+        <div class="w-10 h-10 rounded-full bg-[var(--green)] flex items-center justify-center flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class="flex-1">
+          <h2 class="text-base font-semibold text-[var(--green)]">Pipeline complete</h2>
+          <p class="text-xs text-[var(--text-secondary)]" id="result-duration"></p>
+        </div>
+        <button class="btn btn-outline text-xs" onclick="resetToUpload()">
+          Submit another image
+        </button>
+      </div>
+
+      <!-- Match type notice -->
+      <div id="match-notice" class="hidden mb-4 p-3 rounded-lg text-sm flex gap-2 items-start">
+        <span class="text-base mt-[-2px]">ℹ️</span>
+        <span id="match-notice-text"></span>
+      </div>
+
+      <!-- Results grid: face | match -->
+      <div class="results-grid mb-4">
+
+        <!-- Left: Face panel -->
+        <div class="card p-5 face-panel">
+          <h3 class="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-3">
+            Detected Face
+          </h3>
+          <div class="face-crop-wrap mb-3">
+            <img id="result-face-crop" src="" alt="Detected face" />
+            <div class="confidence-badge" id="result-confidence"></div>
+          </div>
+          <div class="mono text-xs text-[var(--text-muted)] truncate" id="result-emb-hash" title=""></div>
+        </div>
+
+        <!-- Right: Match panel -->
+        <div class="card p-5">
+          <h3 class="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-3">
+            Best Match
+          </h3>
+
+          <!-- Match thumbnail -->
+          <div class="match-card mb-4">
+            <img id="result-match-thumb" src="" alt="Matched post image"
+                 class="match-thumb hidden" />
+            <div id="result-match-thumb-placeholder" class="match-thumb-placeholder">
+              Loading thumbnail…
+            </div>
+            <div class="p-3">
+              <div class="flex items-center gap-2 mb-2 flex-wrap">
+                <span id="result-platform-badge" class="platform-badge"></span>
+                <span id="result-match-type-chip" class="match-type-chip"></span>
+              </div>
+              <p class="text-sm font-medium text-[var(--text-primary)] mb-2 leading-snug"
+                 id="result-match-title"></p>
+              <a id="result-match-url" href="#" target="_blank"
+                 class="btn btn-outline text-xs w-full justify-center">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+                View Original Post
+              </a>
+            </div>
+          </div>
+
+          <!-- All matches list -->
+          <div id="all-matches-panel" class="hidden">
+            <p class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+              All Social Matches
+            </p>
+            <div class="match-list" id="all-matches-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom: Blockchain proof -->
+      <div class="proof-card mb-4">
+        <div class="flex items-center gap-2 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#6366f1] to-[#818cf8] flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2"/>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold">Blockchain Proof</h3>
+            <p class="text-xs text-[var(--text-muted)]">Anchored on Polygon Amoy Testnet</p>
+          </div>
+        </div>
+
+        <div class="proof-row">
+          <div class="flex-1 min-w-0">
+            <div class="proof-label">Record ID</div>
+            <div class="mono text-[var(--text-primary)]" id="result-record-id"></div>
+          </div>
+        </div>
+
+        <div class="proof-row">
+          <div class="flex-1 min-w-0">
+            <div class="proof-label">Record Hash (SHA-256)</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <code class="mono text-[var(--text-primary)] text-xs" id="result-record-hash"></code>
+              <button class="copy-btn" id="copy-hash-btn" onclick="copyText('result-record-hash', this)">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="proof-row">
+          <div class="flex-1 min-w-0">
+            <div class="proof-label">IPFS CID</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <code class="mono text-[var(--text-primary)] text-xs truncate" id="result-ipfs-cid"></code>
+              <button class="copy-btn" id="copy-cid-btn" onclick="copyText('result-ipfs-cid', this)">Copy</button>
+              <a id="result-ipfs-link" href="#" target="_blank"
+                 class="badge badge-blue text-xs hover:opacity-80 transition-opacity">
+                Gateway ↗
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="proof-row">
+          <div class="flex-1 min-w-0">
+            <div class="proof-label">Transaction Hash</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <code class="mono text-[var(--text-primary)] text-xs truncate" id="result-tx-hash"></code>
+              <button class="copy-btn" id="copy-tx-btn" onclick="copyText('result-tx-hash', this)">Copy</button>
+            </div>
+          </div>
+          <a id="result-polygonscan-link" href="#" target="_blank"
+             class="btn btn-primary text-xs flex-shrink-0">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            View on PolygonScan
+          </a>
+        </div>
+      </div>
+
+      <!-- Stage timings -->
+      <div class="card p-4">
+        <h3 class="text-sm font-semibold text-[var(--text-secondary)] mb-3">Stage Timings</h3>
+        <div id="timings-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+      </div>
+
+    </div><!-- /results-section -->
+
+  </section><!-- /section-submit -->
+
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- VERIFY TAB                                            -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <section id="section-verify" class="hidden">
+
+    <div class="max-w-lg mx-auto">
+
+      <div class="card p-6 mb-6">
+        <h2 class="text-lg font-semibold mb-4">Verify a Record</h2>
+
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5 uppercase tracking-wide">
+            Record ID
+          </label>
+          <input type="number" id="verify-record-id" min="1" placeholder="e.g. 9"
+                 class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-2.5
+                        text-[var(--text-primary)] text-sm focus:outline-none focus:border-[var(--border-focus)] transition-colors" />
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5 uppercase tracking-wide">
+            Face Image (optional — enables face embedding check)
+          </label>
+          <div class="upload-zone" style="padding: 1.5rem 1rem;" id="verify-upload-zone">
+            <input type="file" id="verify-file-input"
+                   accept="image/jpeg,image/png,image/webp"
+                   onchange="handleVerifyFileSelect(this.files[0])" />
+            <p class="text-sm text-[var(--text-secondary)]" id="verify-file-name">Click or drop to upload</p>
+          </div>
+        </div>
+
+        <button id="verify-btn" class="btn btn-primary w-full justify-center"
+                onclick="runVerification()">
+          Verify Record
+        </button>
+      </div>
+
+      <!-- Verify loading -->
+      <div id="verify-loading" class="hidden card p-6 text-center">
+        <div class="spinner mx-auto mb-3" style="border-color: var(--border); border-top-color: var(--accent); width:32px; height:32px;"></div>
+        <p class="text-sm text-[var(--text-secondary)]">Verifying record…</p>
+      </div>
+
+      <!-- Verify error -->
+      <div id="verify-error" class="hidden card border-[var(--red)] p-6 fade-in">
+        <div class="flex gap-3">
+          <div class="w-10 h-10 rounded-full bg-[rgba(239,68,68,0.15)] flex items-center justify-center flex-shrink-0">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold text-[var(--red)]">Verification Error</h3>
+            <p class="text-sm text-[var(--text-secondary)] mt-1" id="verify-error-msg"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Verify results -->
+      <div id="verify-results" class="hidden fade-in space-y-3">
+        <h3 class="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-2">
+          Verification Checks
+        </h3>
+        <div id="verify-checks-list"></div>
+
+        <!-- Overall result -->
+        <div id="verify-overall" class="card p-5 text-center mt-4">
+          <p class="text-2xl mb-1" id="verify-overall-icon"></p>
+          <p class="text-sm font-semibold" id="verify-overall-text"></p>
+        </div>
+
+        <!-- Fetched record details -->
+        <details class="card p-4">
+          <summary class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide cursor-pointer hover:text-[var(--text-secondary)]">
+            Raw Record Data
+          </summary>
+          <pre id="verify-raw-data" class="mono text-xs text-[var(--text-secondary)] mt-3 whitespace-pre-wrap break-all"></pre>
+        </details>
+      </div>
+
+    </div>
+  </section><!-- /section-verify -->
+
+</main>
+
+<!-- ── Toast container ──────────────────────────────────── -->
+<div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2"></div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT                                             -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<script>
+  // ── Config ──────────────────────────────────────────────
+  const API_BASE = 'http://localhost:8000';
+
+  // Stage → tracker step ID mapping
+  const STAGE_MAP = {
+    'face_encode':       { id: 'st-face',   progress: 0.20, next: 'st-search' },
+    'web_search_full':   { id: 'st-search', progress: 0.45 },
+    'rank_social':       { id: 'st-rank',   progress: 0.55 },
+    'build_record':      { id: 'st-rank',   progress: 0.60 },
+    'ipfs_pin':          { id: 'st-ipfs',   progress: 0.75 },
+    'hash_record':       { id: 'st-ipfs',   progress: 0.80 },
+    'chain_submit':      { id: 'st-chain',  progress: 0.95 },
+    'complete':          { id: 'st-done',   progress: 1.00 },
+  };
+
+  const DONE_STAGES = new Set(['ipfs_pin', 'hash_record', 'chain_submit', 'total', 'complete']);
+
+  // ── Platform metadata ─────────────────────────────────────
+  const PLATFORMS = {
+    'x.com':             { name: 'X (Twitter)',  color: '#000', bg: '#111', icon: 'X' },
+    'twitter.com':        { name: 'X (Twitter)',  color: '#000', bg: '#111', icon: 'X' },
+    'instagram.com':      { name: 'Instagram',     color: '#e1306c', bg: 'linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)', icon: 'IG' },
+    'facebook.com':       { name: 'Facebook',      color: '#1877f2', bg: '#1877f2', icon: 'FB' },
+    'linkedin.com':       { name: 'LinkedIn',      color: '#0a66c2', bg: '#0a66c2', icon: 'IN' },
+    'reddit.com':         { name: 'Reddit',         color: '#ff4500', bg: '#ff4500', icon: 'RE' },
+    'pinterest.com':      { name: 'Pinterest',      color: '#e60023', bg: '#e60023', icon: 'PI' },
+    'tumblr.com':         { name: 'Tumblr',         color: '#001880', bg: '#001880', icon: 'TB' },
+    'vk.com':             { name: 'VK',              color: '#4a76a8', bg: '#4a76a8', icon: 'VK' },
+  };
+
+  // ── State ────────────────────────────────────────────────
+  let currentJobId = null;
+  let pollTimer = null;
+  let faceShown = false;
+
+  // ── Tab switching ─────────────────────────────────────────
+  function switchTab(tab) {
+    document.getElementById('tab-submit').classList.toggle('active', tab === 'submit');
+    document.getElementById('tab-verify').classList.toggle('active', tab === 'verify');
+    document.getElementById('section-submit').classList.toggle('hidden', tab !== 'submit');
+    document.getElementById('section-verify').classList.toggle('hidden', tab !== 'verify');
+  }
+
+  // ── Upload zone drag/drop ─────────────────────────────────
+  const uploadZone = document.getElementById('upload-zone');
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  });
+
+  // ── File selection ────────────────────────────────────────
+  function handleFileSelect(file) {
+    if (!file) return;
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!allowed.includes(file.type)) {
+      showToast('Only JPEG, PNG and WebP images are accepted.', 'error');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('File exceeds 10 MB limit.', 'error');
+      return;
+    }
+    submitImage(file);
+  }
+
+  // ── Submit image ─────────────────────────────────────────
+  async function submitImage(file) {
+    hideAllSections();
+    document.getElementById('progress-section').classList.remove('hidden');
+    document.getElementById('job-id-label').textContent = 'Uploading…';
+
+    resetTracker();
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/run`, { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(`Upload failed: ${data.detail || res.statusText}`);
+        return;
+      }
+
+      currentJobId = data.job_id;
+      faceShown = false;
+      document.getElementById('job-id-label').textContent = `Job: ${currentJobId}`;
+      startPolling(currentJobId);
+    } catch (err) {
+      showError(`Network error: ${err.message}`);
+    }
+  }
+
+  // ── Polling ──────────────────────────────────────────────
+  function startPolling(jobId) {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => pollStatus(jobId), 1000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  async function pollStatus(jobId) {
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/status/${jobId}`);
+      const data = await res.json();
+
+      if (data.status === 'done') {
+        stopPolling();
+        markStage('st-done', 'done');
+        setProgress(1.0);
+        document.getElementById('stage-status').textContent = 'Complete!';
+        showResults(data.result);
+      } else if (data.status === 'error') {
+        stopPolling();
+        showError(data.error || 'Pipeline failed', data);
+      } else {
+        updateProgress(data.stage, data.progress);
+        // Show face crop as soon as it's available
+        if (!faceShown && data.result && data.result.face) {
+          showFacePreview(data.result);
+          faceShown = true;
+        }
+      }
+    } catch (err) {
+      stopPolling();
+      showError(`Poll error: ${err.message}`);
+    }
+  }
+
+  // ── Stage tracker ────────────────────────────────────────
+  function resetTracker() {
+    document.querySelectorAll('.stage-step').forEach(el => {
+      el.classList.remove('active', 'done');
+    });
+    document.getElementById('progress-bar').style.width = '0%';
+    document.getElementById('stage-status').textContent = 'Waiting…';
+  }
+
+  function updateProgress(stage, progress) {
+    // Light up the current stage
+    const cfg = STAGE_MAP[stage];
+    if (cfg) {
+      markStage(cfg.id, 'active');
+      setProgress(cfg.progress);
+      document.getElementById('stage-status').textContent = stage.replace(/_/g, ' ');
+    } else {
+      setProgress(progress);
+    }
+  }
+
+  function markStage(stepId, state) {
+    const step = document.getElementById(stepId);
+    if (!step) return;
+    step.classList.remove('active');
+    if (state === 'active') step.classList.add('active');
+    if (state === 'done')  step.classList.add('done');
+  }
+
+  function setProgress(pct) {
+    document.getElementById('progress-bar').style.width = `${pct * 100}%`;
+  }
+
+  // ── Face preview (shown mid-pipeline) ────────────────────
+  function showFacePreview(result) {
+    const card = document.getElementById('face-preview-card');
+    const face = result.face;
+    if (!face) return;
+
+    // Try to load the face crop from the API endpoint
+    const img = document.getElementById('face-crop-img');
+    img.src = `${API_BASE}/api/pipeline/result/${currentJobId}/face-crop?t=${Date.now()}`;
+    img.onerror = () => { img.style.display = 'none'; };
+
+    const conf = (face.detection_confidence * 100).toFixed(1);
+    document.getElementById('conf-label').textContent = `${conf}% confidence`;
+    document.getElementById('emb-hash-preview').textContent = `emb: ${face.embedding_hash.slice(0, 16)}…`;
+
+    card.classList.remove('hidden');
+    card.classList.add('fade-in');
+  }
+
+  // ── Show results ─────────────────────────────────────────
+  function showResults(result) {
+    document.getElementById('progress-section').classList.add('hidden');
+    document.getElementById('results-section').classList.remove('hidden');
+    document.getElementById('results-section').classList.add('fade-in');
+
+    // Duration
+    const dur = result.total_duration_sec;
+    document.getElementById('result-duration').textContent =
+      `Completed in ${dur.toFixed(1)}s — record #${result.record_id}`;
+
+    // Face panel
+    const face = result.face;
+    const faceCropImg = document.getElementById('result-face-crop');
+    faceCropImg.src = `${API_BASE}/api/pipeline/result/${currentJobId}/face-crop?t=${Date.now()}`;
+    faceCropImg.onerror = () => { faceCropImg.alt = 'Face crop unavailable'; };
+
+    if (face) {
+      document.getElementById('result-confidence').textContent =
+        `${(face.detection_confidence * 100).toFixed(1)}%`;
+      document.getElementById('result-emb-hash').textContent = face.embedding_hash;
+      document.getElementById('result-emb-hash').title = face.embedding_hash;
+    }
+
+    // Match info
+    const matchNotice = document.getElementById('match-notice');
+    const matchNoticeText = document.getElementById('match-notice-text');
+
+    if (result.match_found && result.social_matches && result.social_matches.length > 0) {
+      matchNotice.classList.add('hidden');
+      renderMatch(0, result.social_matches);
+      renderAllMatches(result.social_matches);
+    } else if (result.best_guess_labels && result.best_guess_labels.length > 0) {
+      // No social match but Vision API returned something
+      matchNotice.classList.remove('hidden');
+      matchNotice.className = 'mb-4 p-3 rounded-lg text-sm flex gap-2 items-start bg-[rgba(234,179,8,0.08)] border border-[rgba(234,179,8,0.3)]';
+      matchNoticeText.textContent =
+        `No social-domain match found. Google Vision best guess: "${result.best_guess_labels[0]}". ` +
+        `The record was still pinned to IPFS and anchored on-chain.`;
+      renderNoMatch(result);
+    } else if (result.search_error) {
+      matchNotice.classList.remove('hidden');
+      matchNotice.className = 'mb-4 p-3 rounded-lg text-sm flex gap-2 items-start bg-[rgba(239,68,68,0.08)] border border-[rgba(239,68,68,0.3)]';
+      matchNoticeText.textContent = `Web search error: ${result.search_error}. The record was still anchored on-chain.`;
+      renderNoMatch(result);
+    } else {
+      matchNotice.classList.remove('hidden');
+      matchNotice.className = 'mb-4 p-3 rounded-lg text-sm flex gap-2 items-start bg-[rgba(234,179,8,0.08)] border border-[rgba(234,179,8,0.3)]';
+      matchNoticeText.textContent = 'No social-media match found for this image.';
+      renderNoMatch(result);
+    }
+
+    // Blockchain proof
+    document.getElementById('result-record-id').textContent =
+      result.record_id != null ? `#${result.record_id}` : '—';
+    document.getElementById('result-record-hash').textContent = result.record_hash || '—';
+    document.getElementById('result-ipfs-cid').textContent = result.ipfs_cid || '—';
+    document.getElementById('result-tx-hash').textContent = result.tx_hash || '—';
+
+    const psLink = document.getElementById('result-polygonscan-link');
+    const psHref = result.polygonscan_url;
+    if (psHref) {
+      psLink.href = psHref;
+      psLink.style.display = '';
+    } else {
+      psLink.style.display = 'none';
+    }
+
+    const ipfsLink = document.getElementById('result-ipfs-link');
+    const ipfsHref = result.ipfs_cid ? `https://gateway.pinata.cloud/ipfs/${result.ipfs_cid}` : null;
+    if (ipfsHref) {
+      ipfsLink.href = ipfsLink;
+      ipfsLink.style.display = '';
+    } else {
+      ipfsLink.style.display = 'none';
+    }
+
+    // Timings
+    renderTimings(result.stage_durations_sec, result.total_duration_sec);
+  }
+
+  function renderNoMatch(result) {
+    document.getElementById('result-match-thumb').classList.add('hidden');
+    document.getElementById('result-match-thumb-placeholder').classList.remove('hidden');
+    document.getElementById('result-match-thumb-placeholder').textContent = 'No match found';
+    document.getElementById('result-platform-badge').textContent = '—';
+    document.getElementById('result-match-type-chip').textContent = '—';
+    document.getElementById('result-match-title').textContent = 'No social-domain match';
+    document.getElementById('result-match-url').style.display = 'none';
+    document.getElementById('all-matches-panel').classList.add('hidden');
+  }
+
+  function renderMatch(index, matches) {
+    const m = matches[index];
+    if (!m) return;
+
+    const platform = PLATFORMS[m.domain] || { name: m.domain, color: '#888', bg: '#333', icon: m.domain.slice(0,2).toUpperCase() };
+
+    // Thumbnail via proxy
+    const thumb = document.getElementById('result-match-thumb');
+    const placeholder = document.getElementById('result-match-thumb-placeholder');
+    if (m.matched_image_url) {
+      thumb.src = `${API_BASE}/api/pipeline/proxy-image?url=${encodeURIComponent(m.matched_image_url)}`;
+      thumb.onload = () => { thumb.classList.remove('hidden'); placeholder.classList.add('hidden'); };
+      thumb.onerror = () => {
+        thumb.classList.add('hidden');
+        placeholder.classList.remove('hidden');
+        placeholder.textContent = 'Thumbnail unavailable';
+      };
+    } else {
+      placeholder.classList.remove('hidden');
+      placeholder.textContent = 'No thumbnail available';
+    }
+
+    // Platform badge
+    const badge = document.getElementById('result-platform-badge');
+    badge.textContent = platform.name;
+    badge.style.color = platform.color;
+    badge.style.borderColor = platform.color;
+    badge.style.background = platform.bg.includes('gradient') ? 'transparent' : platform.bg;
+
+    // Match type chip
+    const chip = document.getElementById('result-match-type-chip');
+    const chipClass = m.match_type === 'full_match' ? 'full'
+                    : m.match_type === 'partial_match' ? 'partial'
+                    : 'similar';
+    chip.textContent = m.match_type.replace(/_/g, ' ');
+    chip.className = `match-type-chip ${chipClass}`;
+
+    // Title
+    document.getElementById('result-match-title').textContent = m.page_title || m.url;
+
+    // URL
+    const urlEl = document.getElementById('result-match-url');
+    urlEl.href = m.url;
+    urlEl.style.display = '';
+  }
+
+  function renderAllMatches(matches) {
+    const panel = document.getElementById('all-matches-panel');
+    const list = document.getElementById('all-matches-list');
+    list.innerHTML = '';
+
+    if (!matches || matches.length <= 1) {
+      panel.classList.add('hidden');
+      return;
+    }
+    panel.classList.remove('hidden');
+
+    matches.forEach((m, i) => {
+      const platform = PLATFORMS[m.domain] || { name: m.domain, color: '#888', bg: '#333' };
+      const item = document.createElement('div');
+      item.className = 'match-list-item';
+      item.innerHTML = `
+        <span style="width:28px;height:28px;border-radius:6px;background:${platform.bg};color:#fff;
+                     display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;flex-shrink:0;
+                     font-family:'JetBrains Mono',monospace;">
+          ${(platform.name || m.domain).slice(0,2)}
+        </span>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-medium truncate" style="color:var(--text-primary)">${m.page_title || m.url}</p>
+          <p class="text-xs truncate" style="color:var(--text-muted)">${m.domain}</p>
+        </div>
+        <span class="match-type-chip ${m.match_type === 'full_match' ? 'full' : m.match_type === 'partial_match' ? 'partial' : 'similar'}"
+              style="flex-shrink:0">${m.match_type.replace(/_/g,' ')}</span>
+      `;
+      item.onclick = () => {
+        document.querySelectorAll('.match-list-item').forEach(el => el.classList.remove('selected'));
+        item.classList.add('selected');
+        renderMatch(i, matches);
+      };
+      list.appendChild(item);
+    });
+  }
+
+  function renderTimings(stageDurations, total) {
+    const grid = document.getElementById('timings-grid');
+    grid.innerHTML = '';
+    const labels = {
+      input_sha256:    'SHA-256',
+      face_encode:      'Face Detect',
+      web_search_full: 'Web Search',
+      rank_social:     'Rank',
+      build_record:     'Build Record',
+      ipfs_pin:         'IPFS Pin',
+      hash_record:      'Hash Record',
+      chain_submit:     'Chain Write',
+    };
+    for (const [key, val] of Object.entries(stageDurations)) {
+      if (key === 'total') continue;
+      const pct = total > 0 ? ((val / total) * 100).toFixed(0) : 0;
+      const div = document.createElement('div');
+      div.className = 'p-3 rounded-lg bg-[var(--bg-card-alt)] border border-[var(--border)]';
+      div.innerHTML = `
+        <div class="text-xs text-[var(--text-muted)] mb-1">${labels[key] || key}</div>
+        <div class="text-sm font-semibold mono" style="color:var(--text-primary)">${(val).toFixed(2)}s</div>
+        <div class="text-xs text-[var(--text-muted)]">${pct}%</div>
+      `;
+      grid.appendChild(div);
+    }
+  }
+
+  // ── Error ───────────────────────────────────────────────
+  function showError(msg, jobData) {
+    stopPolling();
+    // Show the error card — keep progress-section visible so the user can see
+    // which stages completed before the error occurred.
+    const card = document.getElementById('error-card');
+    document.getElementById('error-detail').textContent = msg;
+    card.classList.remove('hidden');
+    card.classList.add('fade-in');
+
+    // Highlight the progress section with a red left border to signal failure
+    const prog = document.getElementById('progress-section');
+    prog.style.borderLeft = '3px solid var(--red)';
+    prog.style.paddingLeft = '0.75rem';
+
+    // If the chain write failed but IPFS pinning succeeded, show the IPFS info
+    // so the user still has a valid content anchor even though on-chain failed.
+    const result = jobData && jobData.result;
+    const ipfsInfo = document.getElementById('error-ipfs-info');
+    if (result && result.ipfs_cid && !result.ipfs_pin_error) {
+      document.getElementById('error-ipfs-cid').textContent = result.ipfs_cid;
+      const link = document.getElementById('error-ipfs-link');
+      link.href = `https://gateway.pinata.cloud/ipfs/${result.ipfs_cid}`;
+      link.style.display = '';
+      ipfsInfo.classList.remove('hidden');
+    } else {
+      ipfsInfo.classList.add('hidden');
+    }
+  }
+
+  // ── Reset to upload ─────────────────────────────────────
+  function resetToUpload() {
+    stopPolling();
+    currentJobId = null;
+    faceShown = false;
+    document.getElementById('results-section').classList.add('hidden');
+    document.getElementById('progress-section').classList.add('hidden');
+    // Reset the red border/padding added by showError
+    const prog = document.getElementById('progress-section');
+    prog.style.borderLeft = '';
+    prog.style.paddingLeft = '';
+    document.getElementById('error-card').classList.add('hidden');
+    document.getElementById('face-preview-card').classList.add('hidden');
+    document.getElementById('upload-section').classList.remove('hidden');
+    document.getElementById('file-input').value = '';
+  }
+
+  function hideAllSections() {
+    ['upload-section', 'progress-section', 'results-section', 'error-card'].forEach(id => {
+      document.getElementById(id).classList.add('hidden');
+    });
+  }
+
+  // ── Copy to clipboard ───────────────────────────────────
+  function copyText(id, btn) {
+    const el = document.getElementById(id);
+    navigator.clipboard.writeText(el.textContent.trim()).then(() => {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // ── Toast ───────────────────────────────────────────────
+  function showToast(msg, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    const bg = type === 'error' ? 'rgba(239,68,68,0.9)' : 'rgba(99,102,241,0.9)';
+    toast.style.cssText = `
+      background:${bg};color:#fff;padding:0.75rem 1.25rem;border-radius:10px;
+      font-size:0.875rem;box-shadow:0 4px 20px rgba(0,0,0,0.3);
+      animation:fadeIn 0.25s ease;max-width:320px;
+    `;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3500);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // VERIFY TAB                                            │
+  // ══════════════════════════════════════════════════════
+  let verifyFilePath = null;
+
+  function handleVerifyFileSelect(file) {
+    if (!file) return;
+    verifyFilePath = file; // Store for later use
+    document.getElementById('verify-file-name').textContent = file.name;
+    document.getElementById('verify-file-name').style.color = 'var(--text-primary)';
+  }
+
+  async function runVerification() {
+    const recordId = document.getElementById('verify-record-id').value.trim();
+    if (!recordId) {
+      showToast('Please enter a record ID.', 'error');
+      return;
+    }
+
+    // Hide previous results
+    ['verify-loading', 'verify-error', 'verify-results'].forEach(id => {
+      document.getElementById(id).classList.add('hidden');
+    });
+    document.getElementById('verify-loading').classList.remove('hidden');
+
+    try {
+      let url = `${API_BASE}/api/pipeline/verify/${recordId}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      document.getElementById('verify-loading').classList.add('hidden');
+
+      if (!res.ok) {
+        showVerifyError(data.detail || 'Verification failed.');
+        return;
+      }
+
+      renderVerifyResults(data);
+    } catch (err) {
+      document.getElementById('verify-loading').classList.add('hidden');
+      showVerifyError(`Network error: ${err.message}`);
+    }
+  }
+
+  function showVerifyError(msg) {
+    const card = document.getElementById('verify-error');
+    document.getElementById('verify-error-msg').textContent = msg;
+    card.classList.remove('hidden');
+    card.classList.add('fade-in');
+  }
+
+  function renderVerifyResults(data) {
+    const container = document.getElementById('verify-results');
+    const checksList = document.getElementById('verify-checks-list');
+    checksList.innerHTML = '';
+
+    data.checks.forEach(check => {
+      const div = document.createElement('div');
+      div.className = `verify-check ${check.passed ? 'pass' : 'fail'}`;
+      div.innerHTML = `
+        <div class="verify-icon">
+          ${check.passed
+            ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+            : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+          }
+        </div>
+        <div class="flex-1">
+          <div class="verify-check-label">${check.name.replace(/_/g, ' ')}</div>
+          ${check.detail ? `<div class="verify-check-detail">${check.detail.replace(/\n/g, ' ')}</div>` : ''}
+        </div>
+      `;
+      checksList.appendChild(div);
+    });
+
+    // Overall
+    const overallCard = document.getElementById('verify-overall');
+    const icon = document.getElementById('verify-overall-icon');
+    const text = document.getElementById('verify-overall-text');
+
+    if (data.all_passed) {
+      overallCard.className = 'card p-5 text-center mt-4 border-[var(--green)] bg-[rgba(34,197,94,0.05)]';
+      icon.textContent = '✅';
+      text.textContent = 'All checks passed — record is intact and unmodified.';
+      text.style.color = 'var(--green)';
+    } else {
+      overallCard.className = 'card p-5 text-center mt-4 border-[var(--red)] bg-[rgba(239,68,68,0.05)]';
+      icon.textContent = '❌';
+      text.textContent = 'Some checks failed — record may have been tampered with or does not exist.';
+      text.style.color = 'var(--red)';
+    }
+
+    // Raw data
+    const raw = JSON.stringify({
+      record_id: data.record_id,
+      on_chain: data.on_chain,
+      fetched_record: data.fetched_record,
+    }, null, 2);
+    document.getElementById('verify-raw-data').textContent = raw;
+
+    container.classList.remove('hidden');
+    container.classList.add('fade-in');
+  }
+
+  // ── Keyboard shortcut: Enter to verify ─────────────────
+  document.getElementById('verify-record-id').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runVerification();
+  });
+</script>
+
+</body>
+</html>

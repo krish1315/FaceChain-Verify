@@ -1,0 +1,18 @@
+# pinned requirements — generated from installed environment on 2026-09-06
+# Run:  pip install -r requirements.txt
+# to reproduce this environment exactly.
+#
+fastapi==0.136.3
+uvicorn==0.48.0
+insightface==1.0.1
+onnxruntime==1.29.0
+opencv-python-headless==4.10.0.84
+numpy==2.4.6
+requests==2.34.2
+python-dotenv==1.2.2
+web3==8.0.0
+eth-account==0.14.0
+pydantic==2.13.4
+pillow==12.2.0
+pytest==9.1.1
+pytest-asyncio==1.4.0

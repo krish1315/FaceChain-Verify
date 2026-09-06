@@ -1,0 +1,21 @@
+{
+  "name": "faceid-chain-verify",
+  "version": "1.0.0",
+  "description": "A pipeline that detects a face in an input image, generates a 512-d embedding, performs reverse image search via Google Cloud Vision API, filters results to social-media domains, builds a canonical match record, pins it to IPFS (Pinata), and anchors the record hash + IPFS CID on a smart contract on Polygon Amoy testnet. Records can later be verified by recomputing the hash and comparing on-chain.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "dotenv": "^17.4.2",
+    "hardhat": "^2.22.19"
+  },
+  "type": "commonjs"
+}

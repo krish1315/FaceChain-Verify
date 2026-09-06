@@ -1,0 +1,67 @@
+{
+  "lockfile_version": 1,
+  "generated_at": "2026-09-06T00:00:00Z",
+  "note": "Pinned dependency versions for reproducible CI/judge environments. Install with: pip install -r requirements.txt",
+  "packages": [
+    {
+      "name": "fastapi",
+      "version": "0.136.3"
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.48.0"
+    },
+    {
+      "name": "insightface",
+      "version": "1.0.1"
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.29.0"
+    },
+    {
+      "name": "opencv-python-headless",
+      "version": "4.10.0.84"
+    },
+    {
+      "name": "numpy",
+      "version": "2.4.6"
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2"
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.2.2"
+    },
+    {
+      "name": "web3",
+      "version": "8.0.0"
+    },
+    {
+      "name": "eth-account",
+      "version": "0.14.0"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.4"
+    },
+    {
+      "name": "pillow",
+      "version": "12.2.0"
+    },
+    {
+      "name": "pytest",
+      "version": "9.1.1"
+    },
+    {
+      "name": "pytest-asyncio",
+      "version": "1.4.0"
+    }
+  ],
+  "reproducibility_check": {
+    "description": "Run: pip check && pytest backend/tests -v  to verify the environment matches.",
+    "command": "pip install pip-tools && pip-compile --generate-hash --output-file=requirements_lock.txt requirements.in"
+  }
+}
