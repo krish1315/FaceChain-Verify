@@ -11,14 +11,15 @@ The focus is on **tamper-evidence**, not on-chain enforcement. The record hash s
 ## Table of contents
 
 1. [What it does](#1-what-it-does)
-2. [Architecture](#2-architecture)
-3. [Tech stack](#3-tech-stack)
-4. [Setup](#4-setup)
-5. [How to run](#5-how-to-run)
-6. [Blockchain: Polygon Amoy](#6-blockchain-why-polygon-amoy)
-7. [Known limitations](#7-known-limitations)
-8. [Responsible use](#8-responsible-use)
-9. [License](#9-license)
+2. [Evidence — real run walkthrough](#2-evidence--real-run-walkthrough)
+3. [Architecture](#3-architecture)
+4. [Tech stack](#4-tech-stack)
+5. [Setup](#5-setup)
+6. [How to run](#6-how-to-run)
+7. [Blockchain: Polygon Amoy](#7-blockchain-why-polygon-amoy)
+8. [Known limitations](#8-known-limitations)
+9. [Responsible use](#9-responsible-use)
+10. [License](#10-license)
 
 ---
 
@@ -32,7 +33,27 @@ Verification works in reverse: given a record ID, the contract returns the store
 
 ---
 
-## 2. Architecture
+## 2. Evidence — real run walkthrough
+
+The screenshots below are from an actual run of the deployed pipeline (record #23), not staged or mocked data.
+
+### Real social match found, no hardcoded results
+
+![Best match result showing a real Instagram/Facebook match](docs/evidence/record-23-match.png)
+
+The pipeline was given a photo and, via Google Cloud Vision's Web Detection API, found the same face across multiple real public posts on Instagram and Facebook — including exact ("full match") hits with distinct captions and post URLs. Each result links directly to the real originating post via **View Original Post**.
+
+Note the **"No thumbnail available"** message on the top match: this is intentional, not a bug. Facebook and Instagram block direct hotlinking of images from external servers, so while Google's index confirms the image exists at that URL (and the pipeline can link to it), the pipeline cannot always re-display the raw thumbnail. Rather than showing a broken image icon, the UI shows this fallback message with the real link still functional — see [Known limitations](#8-known-limitations).
+
+### Real pipeline timing, stage by stage
+
+![Stage timing breakdown for a real pipeline run](docs/evidence/stage-timings.png)
+
+This is a genuine per-stage timing breakdown from a live run: face detection (1.66s), the web search call to Google Vision (16.25s — the dominant cost, since it's a real network round-trip to Google's API, not a local computation), IPFS pinning (2.08s), and the on-chain write (3.08s). These numbers vary run to run because they reflect real network latency to three independent external services, not simulated delays.
+
+---
+
+## 3. Architecture
 
 ```
 ┌──────────────┐     ┌────────────────────────────────────┐
@@ -104,8 +125,9 @@ faceid-chain-verify/
 │   └── tests/              # pytest suite (unit + integration)
 ├── contracts/
 │   └── RecordRegistry.sol   # Smart contract source
-├── frontend/                # Web UI (placeholder)
-├── docs/                    # Architecture & design docs
+├── frontend/                # Web UI
+├── docs/
+│   └── evidence/            # Screenshots proving real pipeline runs
 ├── .env.example             # Environment variable template
 ├── requirements.txt         # Pinned Python dependencies
 └── requirements_lock.json   # Strict version lock for reproducibility
@@ -113,7 +135,7 @@ faceid-chain-verify/
 
 ---
 
-## 3. Tech stack
+## 4. Tech stack
 
 | Layer | Technology | Why this choice |
 |---|---|---|
@@ -130,9 +152,9 @@ faceid-chain-verify/
 
 ---
 
-## 4. Setup
+## 5. Setup
 
-### 4.1 Prerequisites
+### 5.1 Prerequisites
 
 - Python 3.11+
 - A Polygon Amoy wallet with MATIC (use the faucet below)
@@ -141,7 +163,7 @@ faceid-chain-verify/
 
 ---
 
-### 4.2 Google Cloud Vision API key
+### 5.2 Google Cloud Vision API key
 
 1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create or select a project.
 2. Enable the **Cloud Vision API** for the project.
@@ -151,25 +173,26 @@ faceid-chain-verify/
 
 ---
 
-### 4.3 Pinata IPFS
+### 5.3 Pinata IPFS
 
 1. Sign up at [pinata.cloud](https://pinata.cloud).
 2. Go to **API Keys → New Key**.
-3. Create a key with the `pinJSONToIPFS` scope (minimum required).
+3. Create a key with **both** the `pinJSONToIPFS` and `pinFileToIPFS` scopes. `pinFileToIPFS` is required — the pipeline pins raw canonical bytes directly to guarantee the pinned content matches the on-chain hash byte-for-byte (see the byte-mismatch note in [Known limitations](#8-known-limitations)).
 4. Copy both the **API Key** and **Secret API Key** — paste them into `.env`.
 
 ---
 
-### 4.4 Polygon Amoy wallet + MATIC faucet
+### 5.4 Polygon Amoy wallet + MATIC faucet
 
 1. Install MetaMask or any EVM-compatible wallet.
 2. Switch to the **Polygon Amoy** test network. RPC URL: `https://rpc-amoy.polygon.technology`. Chain ID: `80002`. Currency symbol: `MATIC`.
-3. Get Amoy MATIC from the faucet: [faucet.polygon.technology](https://faucet.polygon.technology) — paste your Amoy wallet address, request test tokens (1 MATIC is more than enough for hundreds of records).
-4. Export your wallet's **private key** (MetaMask: Account Details → Export Private Key). Paste it into `.env` as `DEPLOYER_PRIVATE_KEY` — **without the `0x` prefix**.
+3. Get Amoy MATIC from a faucet, e.g. [faucet.polygon.technology](https://faucet.polygon.technology) or [alchemy.com/faucets/polygon-amoy](https://www.alchemy.com/faucets/polygon-amoy) — paste your Amoy wallet address, request test tokens.
+4. Export your wallet's **private key** (MetaMask: Account Details → Show Private Key — this is different from your wallet address). Paste it into `.env` as `DEPLOYER_PRIVATE_KEY` — **without the `0x` prefix**.
+5. Use a throwaway wallet dedicated to this project. Never reuse a wallet holding real funds, and never commit `.env` to source control.
 
 ---
 
-### 4.5 Deploy the smart contract
+### 5.5 Deploy the smart contract
 
 ```bash
 # 1. Navigate to contracts/
@@ -192,7 +215,7 @@ The `RecordRegistry` contract source is in `contracts/contracts/RecordRegistry.s
 
 ---
 
-### 4.6 Environment setup
+### 5.6 Environment setup
 
 ```bash
 # Copy the template
@@ -207,9 +230,11 @@ cp .env.example .env
 #   CONTRACT_ADDRESS=0x...
 ```
 
+`.env` is listed in `.gitignore` and must never be committed. Only `.env.example` (with placeholder values) belongs in version control.
+
 ---
 
-### 4.7 Install Python dependencies
+### 5.7 Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -225,9 +250,9 @@ pytest backend/tests -v
 
 ---
 
-## 5. How to run
+## 6. How to run
 
-### 5.1 Backend API
+### 6.1 Backend API
 
 ```bash
 # Start the FastAPI server
@@ -258,27 +283,38 @@ curl -X POST http://localhost:8000/api/pipeline/run \
 ```bash
 curl http://localhost:8000/api/pipeline/status/a1b2c3d4e5f6
 # → {"status": "done", "stage": "complete", "progress": 1.0,
-#     "result": {"record_id": 1, "tx_hash": "0x...", ...}}
+#     "result": {"record_id": 23, "tx_hash": "0x...", ...}}
 ```
 
 **Verify a record:**
 
 ```bash
-curl "http://localhost:8000/api/pipeline/verify/1"
-# → {"record_id": 1, "on_chain": true, "all_passed": true,
+curl "http://localhost:8000/api/pipeline/verify/23"
+# → {"record_id": 23, "on_chain": true, "all_passed": true,
 #     "checks": [{"name": "...", "passed": true, ...}]}
 ```
 
 ---
 
-### 5.2 CLI
+### 6.2 Web UI
+
+```bash
+cd frontend
+python -m http.server 3001
+```
+
+Open `http://localhost:3001`. Drag and drop an image onto the upload zone, watch the live stage tracker, and review the best match plus the full ranked list of social matches. Use the **Verify Record** tab to re-check any past record ID and see the three-way tamper-evidence check (on-chain existence, chain-vs-IPFS hash integrity, and optional face-embedding match against a re-uploaded photo).
+
+---
+
+### 6.3 CLI
 
 ```bash
 # Run the pipeline directly on a file
 python -m backend.app.cli run backend/tests/fixtures/mona_lisa.jpg
 
 # Verify an existing record
-python -m backend.app.cli verify 1
+python -m backend.app.cli verify 23
 
 # Run in mock mode (skips all external calls — for CI only)
 PIPELINE_MOCK_MODE=true python -m backend.app.cli run test.jpg
@@ -286,7 +322,7 @@ PIPELINE_MOCK_MODE=true python -m backend.app.cli run test.jpg
 
 ---
 
-### 5.3 Running tests
+### 6.4 Running tests
 
 ```bash
 # Unit + integration tests (skips live API tests when credentials are missing)
@@ -303,15 +339,15 @@ PIPELINE_MOCK_MODE=true pytest backend/tests/test_pipeline_e2e.py -v -s
 
 ---
 
-## 6. Blockchain: why Polygon Amoy
+## 7. Blockchain: why Polygon Amoy
 
 **Polygon Amoy** is a Polygon Labs EVM-compatible proof-of-stake testnet. It was chosen for three reasons:
 
-1. **Near-zero gas cost.** A `submitRecord` call costs roughly 0.0001–0.001 MATIC — well under $0.01 at current testnet token prices. This means hundreds or thousands of records can be anchored for the cost of a single dollar. There is no financial barrier to running the pipeline.
+1. **Near-zero gas cost.** A `submitRecord` call costs a small fraction of a testnet MATIC. This means hundreds or thousands of records can be anchored for negligible cost. There is no financial barrier to running the pipeline.
 
 2. **Fast finality (~2 seconds).** The chain reaches finality in a few seconds, so a record is verifiable immediately after submission without waiting for multiple block confirmations.
 
-3. **Full EVM compatibility.** The contract is written in Solidity and deployed to an EVM chain, so it works with any Ethereum tooling (`web3.py`, MetaMask, Etherscan, Hardhat). Switching to Polygon Mainnet, Sepolia, or any EVM L2 would require only changing the RPC URL and redeploying.
+3. **Full EVM compatibility.** The contract is written in Solidity and deployed to an EVM chain, so it works with any Ethereum tooling (`web3.py`, MetaMask, block explorers, Hardhat). Switching to Polygon Mainnet, Sepolia, or any EVM L2 would require only changing the RPC URL and redeploying.
 
 ### ⚠️ This is a testnet, not mainnet
 
@@ -322,35 +358,41 @@ What testnet means in practice:
 - There is no economic security: a testnet validator has no incentive to maintain the chain indefinitely.
 - Records on testnet cannot be used as legal evidence in most jurisdictions — they exist purely to demonstrate the technical pipeline.
 
-**For a production tamper-evidence system**, deploy the `RecordRegistry` contract to a persistent EVM mainnet (Polygon PoS, Ethereum Sepolia, etc.) where the chain has economic finality measured in years, not days.
+**For a production tamper-evidence system**, deploy the `RecordRegistry` contract to a persistent EVM mainnet (Polygon PoS, Ethereum mainnet, etc.) where the chain has economic finality measured in years, not days.
 
 The **tamper-evidence model** here is: *the on-chain hash is deterministic, so any holder of the canonical record JSON can independently verify it matches the stored anchor.* This works identically on testnet and mainnet — the difference is only how long the anchor persists.
 
 ---
 
-## 7. Known limitations
+## 8. Known limitations
 
 **Be honest about what this system can and cannot do:**
 
 - **Match quality depends on Google Vision's index.** Google Cloud Vision Web Detection is a general-purpose image search tool, not a face-search engine. It returns results based on what Google's crawler has indexed — meaning it only finds images that are already publicly accessible on the web. Images behind login walls, private accounts, or rare content that hasn't been crawled may not appear. Match quality also degrades for heavily cropped faces, unusual angles, low resolution, or heavy editing/artistic distortion.
 
+- **Match coverage varies significantly by platform.** Reddit, Pinterest, Tumblr, and X/Twitter tend to be well-indexed by Google's crawler, so matches on these platforms are relatively reliable. Instagram and Facebook aggressively restrict crawler access and require login to view most content, so Google's index of them is sparse — real matches from these two platforms are rarer even when the content genuinely exists there.
+
+- **Thumbnails for some matched images cannot always be displayed.** Facebook and Instagram block direct hotlinking of their hosted images from external servers, even when the underlying post is public and correctly identified by Google's index. When this happens, the UI shows "No thumbnail available" with the real post link still functional, rather than a broken image icon — see the record #23 screenshot in [Evidence](#2-evidence--real-run-walkthrough). The match itself is still valid and verifiable; only the visual thumbnail preview is affected.
+
 - **Social domain filter is hardcoded.** The list of domains (`x.com`, `instagram.com`, etc.) is fixed in `backend/app/search/reverse_image_search.py`. There is no configuration file or environment variable to extend it. Adding domains requires a code change.
 
 - **Single-face pipeline.** If an image contains multiple faces, the pipeline currently selects the largest/primary face. Multi-face handling is on the roadmap but not implemented.
 
-- **Testnet records are impermanent.** As described in Section 6, records on Amoy have no guaranteed long-term persistence. A production deployment needs a mainnet chain.
+- **Testnet records are impermanent.** As described in Section 7, records on Amoy have no guaranteed long-term persistence. A production deployment needs a mainnet chain.
 
 - **Face recognition accuracy is image-dependent.** InsightFace's `buffalo_l` model performs well on well-lit, frontal images. It degrades on profile views, occluded faces, extreme expressions, or very low-resolution inputs. The `detection_confidence` score in the output lets callers decide whether to trust a result.
 
 - **IPFS content persistence.** Pinata keeps content pinned as long as your account is active. If the Pinata account is deleted or the key is revoked, the CID may become unreachable from Pinata's gateway. Consider replicating pinning to a second provider for evidence-grade persistence.
 
+- **Early records (IDs 1–9) have a broken chain↔IPFS integrity check.** These records were anchored during development before a byte-encoding mismatch was discovered. The pipeline was using Pinata's `pinJSONToIPFS` API, which serialises the JSON on Pinata's server — producing different bytes than Python's JSON encoder (e.g. one side encodes `0.0` as `0`). The on-chain hash was computed over Python-encoded bytes, but Pinata stored differently-encoded bytes, so the SHA-256 values diverge. Records 1–9 will fail the `chain_vs_ipfs_integrity` check during verification. This was fixed by switching the pipeline to pin raw canonical bytes via `pinFileToIPFS` instead of `pinJSONToIPFS`, and to hash those exact same bytes immediately before upload — ensuring the pinned content and the on-chain hash are always computed from an identical byte sequence, with no re-serialization step in between. All records anchored after this fix (ID 10 onward, including the demonstrated record #23) pass the integrity check correctly. The broken early records remain on-chain deliberately, as a live, honest example of the bug and its detection.
+
 - **No authentication on the API.** The FastAPI server currently has no auth — anyone who can reach the port can submit images and read records. A production deployment needs JWT/session auth and rate limiting.
 
-- **No user consent flow.** The pipeline does not check or record whether the person in the submitted image consented to being searched. This is a significant ethical and legal gap — see Section 8.
+- **No user consent flow.** The pipeline does not check or record whether the person in the submitted image consented to being searched. This is a significant ethical and legal gap — see Section 9.
 
 ---
 
-## 8. Responsible use
+## 9. Responsible use
 
 **This project is a technical demonstrator.** It is designed to show how a face detection → web search → IPFS → blockchain pipeline can create tamper-evident evidence records. Any production use involves serious ethical and legal considerations.
 
@@ -370,7 +412,7 @@ This project includes these warnings in the documentation rather than silently g
 
 ---
 
-## 9. License
+## 10. License
 
 MIT License
 

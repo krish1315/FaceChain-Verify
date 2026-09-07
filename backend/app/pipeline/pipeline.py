@@ -149,26 +149,20 @@ class PipelineResult(pydantic.BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _normalise_floats(obj):
-    """Recursively replace float values that are whole numbers (e.g. 0.0) with
-    their integer equivalents, matching Go/Pinata's JSON encoder behaviour."""
-    if isinstance(obj, dict):
-        return {k: _normalise_floats(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_normalise_floats(v) for v in obj]
-    if isinstance(obj, float) and obj.is_integer():
-        return int(obj)
-    return obj
-
-
 def _canonical_json(data: dict) -> bytes:
-    """Return the canonical JSON serialisation (no extra whitespace, preserve
-    insertion-order key ordering to match how requests/json= sends it to Pinata).
+    """Return the canonical JSON byte representation.
 
-    Uses ensure_ascii=False so Unicode characters are stored as UTF-8 bytes,
-    matching what Pinata's server serialises and pins.
+    - ``sort_keys=True`` ensures a deterministic byte sequence regardless of
+      insertion-order variation in the source dict.
+    - ``ensure_ascii=False`` stores non-ASCII characters as their UTF-8 bytes
+      directly rather than ``\\u`` escape sequences.
+    - ``separators=(",", ":")`` removes trailing commas and extra spaces.
+
+    The caller is responsible for computing ``sha256`` of the returned bytes
+    *before* passing them to any pinning call, so the hash covers the identical
+    bytes that IPFS stores.
     """
-    return json.dumps(data, sort_keys=False, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +305,21 @@ def run_pipeline(image_path: str | Path) -> PipelineResult:
     # Take the top-ranked social match as the primary match
     primary_match = result.social_matches[0] if result.social_matches else None
 
+    # Extract the best available confidence score from the raw Vision API response.
+    # Vision API's webDetection does not provide per-image similarity scores, so we
+    # use the highest webEntities score as a proxy for overall match confidence.
+    # webEntities describe what is IN the image (e.g. "Mona Lisa" score=1.49).
+    raw_web = (
+        raw_search.get("_raw_response", {})
+        .get("responses", [{}])[0]
+        .get("webDetection", {})
+    )
+    web_entities = raw_web.get("webEntities", []) or raw_web.get("webAnnotation", {}).get("entities", [])
+    best_entity_score = max(
+        (e.get("score", 0.0) for e in web_entities),
+        default=0.0,
+    )
+
     canonical_record = {
         "pipeline_version": "1.0.0",
         "inputImageSha256": result.input_image_sha256,
@@ -318,7 +327,7 @@ def run_pipeline(image_path: str | Path) -> PipelineResult:
         "matchedUrl": primary_match.url if primary_match else "",
         "matchedDomain": primary_match.domain if primary_match else "",
         "matchedImageUrl": primary_match.matched_image_url if primary_match else "",
-        "visualSimilarityScore": 0.0,  # not available from rank_social output
+        "visualSimilarityScore": best_entity_score,  # best webEntities score as proxy
         "pageTitle": primary_match.page_title if primary_match else "",
         "timestamp": (
             raw_search.get("_raw_response", {})
@@ -338,26 +347,46 @@ def run_pipeline(image_path: str | Path) -> PipelineResult:
             datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         )
 
-    # Normalise the record so that JSON serialisation produces the EXACT same
-    # bytes Pinata's server produces (Pinata uses Go's JSON encoder which emits
-    # whole-number floats as bare integers, e.g. 0.0 -> 0, not "0.0").
-    # We match that by normalising floats here before hashing or pinning.
-    canonical_record = _normalise_floats(canonical_record)
-
     result.canonical_record = canonical_record
     stage_times["build_record"] = time.monotonic() - t
     log.info(
-        "Stage 4 [build_record]     OK  match_found=%s  top_domain=%s  (%.3fs)",
+        "Stage 4 [build_record]     OK  match_found=%s  top_domain=%s  entity_conf=%.3f  (%.3fs)",
         result.match_found,
         primary_match.domain if primary_match else "—",
+        best_entity_score,
         stage_times["build_record"],
     )
 
-    # ── Stage 5: IPFS pinning ──────────────────────────────────────────
+    # ── Stages 5+6: serialise → hash → pin (single atomic step) ────────
+    #
+    # Flow:
+    #   canonical_bytes = _canonical_json(canonical_record)   # we control the bytes
+    #   record_hash   = sha256(canonical_bytes)              # hash those exact bytes
+    #   ipfs_cid      = pinata.pin_bytes(canonical_bytes)   # pin those exact bytes
+    #   submit_record(record_hash, ipfs_cid)
+    #
+    # All three use the SAME `canonical_bytes` variable so there is no
+    # re-serialisation step between hashing and pinning — Pinata receives exactly
+    # the bytes we hashed, making the chain↔IPFS integrity check reliable.
+    t = time.monotonic()
+    canonical_bytes = _canonical_json(canonical_record)
+    record_hash_bytes = __import__("hashlib").sha256(canonical_bytes).digest()
+    result.record_hash = "0x" + record_hash_bytes.hex()
+    stage_times["hash_record"] = time.monotonic() - t
+    log.info(
+        "Stage 5+6 [hash_pin]       OK  bytes=%d  hash=%s  (%.3fs)",
+        len(canonical_bytes), result.record_hash[:18], stage_times["hash_record"]
+    )
+
+    # ── Stage 5 (continued): IPFS pinning ───────────────────────────────
     t = time.monotonic()
     try:
         pinata = PinataClient()
-        cid = pinata.pin_json(canonical_record, pinata_metadata_name="faceid-chain-verify")
+        cid = pinata.pin_bytes(
+            canonical_bytes,
+            filename="record.json",
+            pinata_metadata_name="faceid-chain-verify",
+        )
         result.ipfs_cid = cid
         stage_times["ipfs_pin"] = time.monotonic() - t
         log.info(
@@ -370,16 +399,9 @@ def run_pipeline(image_path: str | Path) -> PipelineResult:
             "Stage 5 [ipfs_pin]        FAIL  %s  (%.3fs)", exc, stage_times["ipfs_pin"]
         )
 
-    # ── Stage 6: SHA-256 of pinned JSON bytes ─────────────────────────
-    t = time.monotonic()
-    pinned_bytes = _canonical_json(canonical_record)
-    record_hash_bytes = __import__("hashlib").sha256(pinned_bytes).digest()
-    result.record_hash = "0x" + record_hash_bytes.hex()
-    stage_times["hash_record"] = time.monotonic() - t
-    log.info(
-        "Stage 6 [hash_record]      OK  hash=%s  (%.3fs)",
-        result.record_hash[:18], stage_times["hash_record"]
-    )
+    # ── Stage 6 (moved up): already computed above — no-op placeholder ──
+    # (Kept so stage_durations_sec keys remain stable for existing callers.)
+    stage_times["hash_record"] = 0.0
 
     # ── Stage 7: on-chain submission ───────────────────────────────────
     t = time.monotonic()

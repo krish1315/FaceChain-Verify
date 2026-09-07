@@ -462,29 +462,59 @@ async def image_proxy(url: str) -> FileResponse:
 
     # Whitelist of allowed domains to avoid SSRF
     ALLOWED_DOMAINS = {
+        # Twitter / X
         "pbs.twimg.com",
         "abs.twimg.com",
         "platform.twitter.com",
+        "x.com",
+        "twitter.com",
+        # Instagram
         "scontent.cdninstagram.com",
         "scontent-*.cdninstagram.com",
         "instagram.com",
+        # Facebook (CDN endpoints only — page URLs return login walls)
         "lookaside.fbsbx.com",
         "platform-lookaside.fbsbx.com",
+        "scontent-*.fbcdn.net",
+        "scontent.fbcdn.net",
+        # LinkedIn
         "linkedin.com",
         "media.licdn.com",
+        # Reddit
         "i.redd.it",
         "preview.redd.it",
+        "reddit.com",
+        # Pinterest
         "i.pinimg.com",
+        "pinterest.com",
+        # Tumblr
         "static.tumblr.com",
+        "tumblr.com",
+        # VK
         "vk.com",
         "sun1-*.userapi.com",
         "pp.userapi.com",
-        "x.com",
-        "twitter.com",
-        "facebook.com",
-        "reddit.com",
-        "pinterest.com",
-        "tumblr.com",
+        # Other image CDNs commonly returned by Vision API
+        "i.imgur.com",
+        "i.pinimg.com",
+        "upload.wikimedia.org",
+        "m.media-amazon.com",
+        "storage.googleapis.com",
+        "substackcdn.com",
+        "images.squarespace-cdn.com",
+        "worldhistory.org",
+        "1st-art-gallery.com",
+        "annamgallery.com",
+        "arthistoryproject.com",
+        "artchive.com",
+        "bloganchoi.com",
+        "espressonews.gr",
+        "honestabes.info",
+        "media.thisisgallery.com",
+        "mavenart.com",
+        "thetimes.com",
+        "thumbs.dreamstime.com",
+        "ichef.bbci.co.uk",
     }
 
     from urllib.parse import urlparse

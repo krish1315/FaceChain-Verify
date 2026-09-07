@@ -319,12 +319,25 @@ function renderResults(result) {
   const matchContainer = $('match-card-container');
   if (result.match_found && result.social_matches?.length) {
     const m = result.social_matches[0];
-    const thumbUrl = `${API_BASE}/api/image-proxy?url=${encodeURIComponent(m.matched_image_url || m.url)}`;
+    // Use matched_image_url if present (a real image CDN URL).
+    // Fall back to m.url only when the backend confirmed a direct image
+    // for that domain; otherwise leave empty so we don't try to load a
+    // Facebook/Instagram login wall as a thumbnail.
+    const hasDirectImage = m.matched_image_url && m.matched_image_url !== m.url;
+    const thumbSrc = hasDirectImage
+      ? `${API_BASE}/api/image-proxy?url=${encodeURIComponent(m.matched_image_url)}`
+      : '';
+    const thumbHtml = thumbSrc
+      ? `<img class="match-thumb" src="${thumbSrc}" alt="Matched image"
+             onerror="this.style.display='none'" />`
+      : `<div class="match-thumb match-thumb-empty"
+              title="No direct image URL available — page requires login to view">
+            ${platformEmoji(m.domain)}
+          </div>`;
     const typeClass = m.match_type === 'full_match' ? 'full' : m.match_type === 'partial_match' ? 'partial' : 'similar';
     matchContainer.innerHTML = `
       <div class="match-card">
-        <img class="match-thumb" src="${thumbUrl}" alt="Matched image"
-             onerror="this.style.display='none'" />
+        ${thumbHtml}
         <div class="match-body">
           <div class="platform-badge">
             ${platformEmoji(m.domain)} ${m.domain}

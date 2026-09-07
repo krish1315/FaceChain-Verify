@@ -290,7 +290,41 @@ class ReverseImageSearcher:
         return parsed
 
     def rank_social_matches(self, raw_response: dict[str, Any]) -> list[dict[str, Any]]:
-        """Filter and rank web detection results to social-media domains."""
+        """Filter and rank web detection results to social-media domains.
+
+        For page-level matches (from ``pagesWithMatchingImages``), the Vision
+        API returns only the page URL, not a direct image URL. Many social
+        platforms (Facebook, Instagram) return login walls when the page URL
+        is fetched server-side, so a page URL is useless as a thumbnail.
+
+        To get a usable thumbnail, we look up the same domain in
+        ``fullMatchingImages`` and ``partialMatchingImages`` — those lists
+        contain direct image URLs (e.g. ``i.redd.it``, ``pbs.twimg.com``).
+        If a direct image exists for the domain, we use it; otherwise the
+        page URL is stored as a fallback and the frontend will hide the
+        thumbnail gracefully via its ``onerror`` handler.
+        """
+        from urllib.parse import urlparse
+
+        def _domain_of(url: str) -> str:
+            try:
+                return urlparse(url).netloc.lower().removeprefix("www.")
+            except Exception:
+                return ""
+
+        # Build domain -> direct image URLs from full + partial lists.
+        # Vision returns direct CDN URLs here (i.redd.it, pbs.twimg.com, etc.)
+        # even when the page-level match only has a page URL.
+        domain_to_image_urls: dict[str, list[str]] = {}
+        for img in raw_response.get("full_matching_images", []):
+            d = _domain_of(img.get("url", ""))
+            if d:
+                domain_to_image_urls.setdefault(d, []).append(img["url"])
+        for img in raw_response.get("partial_matching_images", []):
+            d = _domain_of(img.get("url", ""))
+            if d:
+                domain_to_image_urls.setdefault(d, []).append(img["url"])
+
         seen_urls: set[str] = set()
         social_matches: list[dict[str, Any]] = []
 
@@ -301,12 +335,7 @@ class ReverseImageSearcher:
                 url = item.get("url", "")
                 if not url:
                     continue
-                try:
-                    from urllib.parse import urlparse
-                    parsed = urlparse(url)
-                    domain = parsed.netloc.lower().removeprefix("www.")
-                except Exception:
-                    domain = ""
+                domain = _domain_of(url)
 
                 if domain not in SOCIAL_DOMAINS:
                     continue
@@ -314,12 +343,22 @@ class ReverseImageSearcher:
                     continue
                 seen_urls.add(url)
 
+                # For page-level matches, try to find a direct image on the
+                # same domain; for image-level entries, the URL itself is
+                # already the direct image URL.
+                is_page_match = "page-level match" in confidence_note
+                if is_page_match:
+                    same_domain_imgs = domain_to_image_urls.get(domain, [])
+                    thumb_url = same_domain_imgs[0] if same_domain_imgs else ""
+                else:
+                    thumb_url = item.get("url", "")
+
                 social_matches.append(
                     {
                         "url": url,
                         "domain": domain,
                         "page_title": item.get("page_title", ""),
-                        "matched_image_url": item.get("matched_image_url", "") or item.get("url", ""),
+                        "matched_image_url": thumb_url,
                         "match_type": match_type,
                         "confidence_note": confidence_note,
                     }

@@ -27,11 +27,17 @@ logging.basicConfig(
 )
 
 
-# IPFS public gateways (try in order)
+# IPFS public gateways (tried in order).
+#
+# ipfs.io is the primary because it reliably returns the raw pinned bytes
+# in their original encoding.  Pinata's public gateway is kept as a fallback
+# but has been observed to re-serialise JSON (e.g. 0.0 → 0, Unicode escapes)
+# which changes the byte sequence and therefore the SHA-256, causing legitimate
+# records to fail the chain-vs-IPFS integrity check.
 IPFS_GATEWAYS = [
-    "https://gateway.pinata.cloud/ipfs/{cid}",
     "https://ipfs.io/ipfs/{cid}",
-    "https://dweb.link/ipfs/{cid}",
+    "https://gateway.pinata.cloud/ipfs/{cid}",
+    "https://cloudflare.cloudflare-ipfs.com/ipfs/{cid}",
 ]
 
 
@@ -65,7 +71,14 @@ class VerifyResult(pydantic.BaseModel):
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def _fetch_ipfs_raw(cid: str, timeout: int = 30) -> bytes | None:
+class _IPFSFetchResult:
+    """Result of _fetch_ipfs_raw: raw bytes plus per-gateway error details."""
+    def __init__(self, raw_bytes: bytes | None, gateway_errors: list[str]):
+        self.raw_bytes = raw_bytes
+        self.gateway_errors = gateway_errors
+
+
+def _fetch_ipfs_raw(cid: str, timeout: int = 30) -> _IPFSFetchResult:
     """Fetch raw bytes from IPFS via public gateways.
 
     We fetch the raw bytes (not parsed JSON) so we can hash the exact same
@@ -73,16 +86,21 @@ def _fetch_ipfs_raw(cid: str, timeout: int = 30) -> bytes | None:
     object could produce a different byte sequence (e.g. Unicode codepoints
     encoded as escape sequences vs literal bytes), causing the hash to mismatch.
     """
+    errors: list[str] = []
     for gw in IPFS_GATEWAYS:
         url = gw.format(cid=cid)
         try:
             r = requests.get(url, timeout=timeout)
             if r.status_code == 200:
-                return r.content
-            log.warning("Gateway %s returned %d for %s", url, r.status_code, cid)
+                return _IPFSFetchResult(r.content, errors)
+            msg = f"{url} → HTTP {r.status_code}"
+            log.warning("Gateway %s", msg)
+            errors.append(msg)
         except Exception as exc:  # noqa: BLE001
+            msg = f"{gw} → {exc}"
             log.warning("Gateway %s failed: %s", url, exc)
-    return None
+            errors.append(msg)
+    return _IPFSFetchResult(None, errors)
 
 
 def _fetch_ipfs_json(cid: str, timeout: int = 30) -> dict | None:
@@ -173,38 +191,49 @@ def verify_record(
 
     # Fetch RAW bytes (not re-serialised JSON) so the hash matches exactly what
     # was computed at submission time — avoids Unicode encoding mismatches.
-    raw_bytes = _fetch_ipfs_raw(on_chain_cid)
-    if raw_bytes is None:
+    fetch_result = _fetch_ipfs_raw(on_chain_cid)
+    if fetch_result.raw_bytes is None:
+        gw_detail = "; ".join(fetch_result.gateway_errors) if fetch_result.gateway_errors else "all gateways unreachable"
         result.checks.append(
             CheckResult(
                 name="chain_vs_ipfs_integrity",
                 passed=False,
-                detail=f"Could not fetch CID {on_chain_cid} from any IPFS gateway",
+                detail=f"Could not fetch CID {on_chain_cid} from any IPFS gateway: {gw_detail}",
             )
         )
-        log.error("Verification FAILED: IPFS fetch failed for %s", on_chain_cid)
+        log.error("Verification FAILED: IPFS fetch failed for %s — %s", on_chain_cid, gw_detail)
         return result
 
     # Also parse as JSON for the face embedding check (stored record field)
-    fetched = _fetch_ipfs_json(on_chain_cid)
+    try:
+        fetched = json.loads(fetch_result.raw_bytes.decode("utf-8"))
+    except Exception:
+        fetched = _fetch_ipfs_json(on_chain_cid)
     result.fetched_record = fetched
 
     # Hash the exact raw bytes from IPFS — matches what was submitted to Pinata
-    computed_hash_bytes = hashlib.sha256(raw_bytes).digest()
+    computed_hash_bytes = hashlib.sha256(fetch_result.raw_bytes).digest()
     computed_hash_hex = "0x" + computed_hash_bytes.hex()
 
     chain_hash_bytes_no0x = on_chain_hash.removeprefix("0x").lower()
     computed_hash_no0x = computed_hash_hex.removeprefix("0x").lower()
 
     integrity_ok = chain_hash_bytes_no0x == computed_hash_no0x
+
+    # Enrich the detail with gateway error context if all gateways returned
+    # the same content but it doesn't match (content drift / re-encoding).
+    extra = ""
+    if not integrity_ok and fetch_result.gateway_errors:
+        extra = f"  (gateways that returned different content: {len(fetch_result.gateway_errors)})"
+
     result.checks.append(
         CheckResult(
             name="chain_vs_ipfs_integrity",
             passed=integrity_ok,
             detail=(
                 f"on-chain hash: {on_chain_hash[:20]}…\n"
-                f"                sha256(canonical fetch): {computed_hash_hex[:20]}…\n"
-                f"                match: {integrity_ok}"
+                f"sha256(IPFS fetch):  {computed_hash_hex[:20]}…\n"
+                f"match: {integrity_ok}{extra}"
             ),
         )
     )
