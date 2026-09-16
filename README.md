@@ -1,4 +1,4 @@
-# faceid-chain-verify
+# faceid-chain-verifyy
 
 **Detect a face in an image, search for it on the public web, pin the match record to IPFS, and anchor a tamper-evident proof on Polygon Amoy.**
 
